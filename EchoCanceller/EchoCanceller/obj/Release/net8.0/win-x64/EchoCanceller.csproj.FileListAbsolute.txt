@@ -1,0 +1,6 @@
+C:\Users\redpu\Desktop\call\EchoCanceller\EchoCanceller\obj\Release\net8.0\win-x64\EchoCanceller.csproj.AssemblyReference.cache
+C:\Users\redpu\Desktop\call\EchoCanceller\EchoCanceller\obj\Release\net8.0\win-x64\EchoCanceller.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\redpu\Desktop\call\EchoCanceller\EchoCanceller\obj\Release\net8.0\win-x64\EchoCanceller.AssemblyInfoInputs.cache
+C:\Users\redpu\Desktop\call\EchoCanceller\EchoCanceller\obj\Release\net8.0\win-x64\EchoCanceller.AssemblyInfo.cs
+C:\Users\redpu\Desktop\call\EchoCanceller\EchoCanceller\obj\Release\net8.0\win-x64\EchoCanceller.csproj.CoreCompileInputs.cache
+C:\Users\redpu\Desktop\call\EchoCanceller\EchoCanceller\obj\Release\net8.0\win-x64\EchoCanceller.sourcelink.json

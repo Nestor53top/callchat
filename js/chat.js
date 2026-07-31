@@ -467,6 +467,93 @@
     }
   }, 1000);
 
+  // --- Echo Canceller ---
+  var echoWs = null;
+  var echoCtx = null;
+  var echoStream = null;
+  document.getElementById('echo-canceller-btn').addEventListener('click', function() {
+    if (echoWs && echoWs.readyState === WebSocket.OPEN) {
+      echoWs.close();
+      echoWs = null;
+      this.textContent = '🛡️ Echo Canceller';
+      this.classList.remove('active');
+      notify('Echo Canceller отключён', 'info');
+      return;
+    }
+    try {
+      echoWs = new WebSocket('ws://localhost:8765');
+      var btn = this;
+      echoWs.onopen = function() {
+        btn.textContent = '🛡️ Echo: ON';
+        btn.classList.add('active');
+        notify('Echo Canceller подключён!', 'success');
+        replaceMicWithEchoStream();
+      };
+      echoWs.onclose = function() {
+        btn.textContent = '🛡️ Echo Canceller';
+        btn.classList.remove('active');
+      };
+      echoWs.onerror = function() {
+        notify('Не удалось подключить Echo Canceller. Запустите EchoCanceller.exe', 'error');
+      };
+      echoWs.binaryType = 'arraybuffer';
+      echoWs.onmessage = function(evt) {};
+    } catch(e) {
+      notify('Ошибка: ' + e.message, 'error');
+    }
+  });
+
+  function replaceMicWithEchoStream() {
+    if (!echoWs || echoWs.readyState !== WebSocket.OPEN) return;
+    echoCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    var outputNode = echoCtx.createMediaStreamDestination();
+
+    var scriptNode = echoCtx.createScriptProcessor(4096, 0, 1);
+    scriptNode.onaudioprocess = function(e) {
+      if (echoWs && echoWs.readyState === WebSocket.OPEN) {
+        var silence = new Float32Array(4096);
+        echoWs.send(silence.buffer);
+      }
+    };
+
+    echoWs.onmessage = function(evt) {
+      if (evt.data instanceof ArrayBuffer) {
+        var int16 = new Int16Array(evt.data);
+        var float32 = new Float32Array(int16.length);
+        for (var i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+        var buffer = echoCtx.createBuffer(1, float32.length, 48000);
+        buffer.getChannelData(0).set(float32);
+        var source = echoCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(outputNode);
+        source.start();
+      }
+    };
+
+    if (localStream) {
+      var oldTracks = localStream.getTracks();
+      for (var i = 0; i < oldTracks.length; i++) {
+        if (oldTracks[i].kind === 'audio') oldTracks[i].enabled = false;
+      }
+    }
+
+    var newStream = outputNode.stream;
+    var keys = Object.keys(peers);
+    for (var i = 0; i < keys.length; i++) {
+      var pc = peers[keys[i]];
+      var senders = pc.getSenders();
+      for (var j = 0; j < senders.length; j++) {
+        if (senders[j].track && senders[j].track.kind === 'audio') {
+          var newTrack = newStream.getAudioTracks()[0];
+          if (newTrack) senders[j].replaceTrack(newTrack);
+        }
+      }
+    }
+    localStream = newStream;
+    echoStream = newStream;
+    notify('Микрофон заменён на Echo Canceller', 'success');
+  }
+
   // --- modals ---
   var closeBtns = document.querySelectorAll('[data-close]');
   for (var i = 0; i < closeBtns.length; i++) {
