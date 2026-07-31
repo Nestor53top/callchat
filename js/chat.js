@@ -13,7 +13,6 @@
   var allMuted = false;
   var micWasOnBeforeMuteAll = true;
   var localStream = null;
-  var micGainNode = null;
   var audioCtx = null;
   var peers = {};
   var audioNodes = {};
@@ -72,48 +71,8 @@
     return { input: hp, output: comp, hp: hp, bp: bp, comp: comp };
   }
 
-  // --- Mic gain ---
-  function applyMicGain(stream) {
-    ensureAudioCtx();
-    micGainNode = audioCtx.createGain();
-    var gainVal = parseInt(localStorage.getItem('vh_mic_gain') || '100');
-    micGainNode.gain.value = gainVal / 100;
-
-    var source = audioCtx.createMediaStreamSource(stream);
-    source.connect(micGainNode);
-
-    var dest = audioCtx.createMediaStreamDestination();
-    micGainNode.connect(dest);
-
-    var bgFilterOn = localStorage.getItem('vh_bg_filter') !== 'false';
-    if (bgFilterOn) {
-      var hp = audioCtx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = 200;
-      hp.Q.value = 0.7;
-      var bp = audioCtx.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.value = 1200;
-      bp.Q.value = 1.0;
-      micGainNode.disconnect();
-      micGainNode.connect(hp);
-      hp.connect(bp);
-      bp.connect(dest);
-    }
-
-    var origTracks = stream.getTracks().filter(function(t) { return t.kind === 'audio'; });
-    origTracks.forEach(function(t) { t.enabled = false; });
-
-    return dest.stream;
-  }
-
-  function getMicGainValue() {
-    return parseInt(localStorage.getItem('vh_mic_gain') || '100');
-  }
-
   function setMicGain(val) {
     localStorage.setItem('vh_mic_gain', val.toString());
-    if (micGainNode) micGainNode.gain.value = val / 100;
   }
 
   // --- User list ---
@@ -609,7 +568,7 @@
       if (savedMic && savedMic !== 'default') audioConstraints.deviceId = { exact: savedMic };
       navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
         .then(function(stream) {
-          localStream = applyMicGain(stream);
+          localStream = stream;
           joinRoom();
         })
         .catch(function(err) {
