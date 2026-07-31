@@ -23,30 +23,41 @@ var db = {
     return !!supa;
   },
 
+  _hash: function(str) {
+    var buf = new TextEncoder().encode(str);
+    return crypto.subtle.digest('SHA-256', buf).then(function(hash) {
+      return Array.from(new Uint8Array(hash)).map(function(b) { return b.toString(16).padStart(2,'0'); }).join('');
+    });
+  },
+
   register: function(nickname, password, cb) {
     if (!supa) return cb('Supabase не подключен');
-    supa.from('users').select('*').eq('nickname', nickname).then(function(r) {
-      if (r.data && r.data.length > 0) return cb('Никнейм занят');
-      var id = db._genId();
-      supa.from('users').insert({
-        user_id: id,
-        nickname: nickname,
-        password: password,
-        color: db._genColor()
-      }).then(function(r2) {
-        if (r2.error) return cb(r2.error.message);
-        cb(null, { id: id, nickname: nickname, color: db._genColor() });
+    db._hash(password).then(function(hash) {
+      supa.from('users').select('*').eq('nickname', nickname).then(function(r) {
+        if (r.data && r.data.length > 0) return cb('Никнейм занят');
+        var id = db._genId();
+        supa.from('users').insert({
+          user_id: id,
+          nickname: nickname,
+          password: hash,
+          color: db._genColor()
+        }).then(function(r2) {
+          if (r2.error) return cb(r2.error.message);
+          cb(null, { id: id, nickname: nickname, color: db._genColor() });
+        });
       });
     });
   },
 
   login: function(nickname, password, cb) {
     if (!supa) return cb('Supabase не подключен');
-    supa.from('users').select('*').eq('nickname', nickname).eq('password', password).then(function(r) {
-      if (r.error) return cb(r.error.message);
-      if (!r.data || r.data.length === 0) return cb('Неверный никнейм или пароль');
-      var u = r.data[0];
-      cb(null, { id: u.user_id, nickname: u.nickname, color: u.color });
+    db._hash(password).then(function(hash) {
+      supa.from('users').select('*').eq('nickname', nickname).eq('password', hash).then(function(r) {
+        if (r.error) return cb(r.error.message);
+        if (!r.data || r.data.length === 0) return cb('Неверный никнейм или пароль');
+        var u = r.data[0];
+        cb(null, { id: u.user_id, nickname: u.nickname, color: u.color });
+      });
     });
   },
 
