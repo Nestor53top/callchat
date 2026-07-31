@@ -21,13 +21,17 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+html { overflow-y: auto; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg);
   color: var(--txt);
   min-height: 100vh;
+  overflow-x: hidden;
 }
+
+body.no-scroll { overflow: hidden; }
 
 .hidden { display: none !important; }
 .mono { font-family: 'Courier New', monospace; color: var(--accent); }
@@ -415,6 +419,8 @@ main { display: flex; flex: 1; overflow: hidden; }
 .settings-page {
   min-height: 100vh;
   background: var(--bg);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .settings-page header {
@@ -433,7 +439,8 @@ main { display: flex; flex: 1; overflow: hidden; }
 .settings-container {
   max-width: 520px;
   margin: 0 auto;
-  padding: 32px 20px 60px;
+  padding: 32px 20px 80px;
+  min-height: calc(100vh - 60px);
 }
 
 .settings-container > h1 {
