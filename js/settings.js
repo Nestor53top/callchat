@@ -5,12 +5,6 @@
 
   var currentMic = localStorage.getItem('vh_mic') || '';
   var currentSpk = localStorage.getItem('vh_spk') || '';
-  var micGain = parseInt(localStorage.getItem('vh_mic_gain') || '100');
-  var bgFilter = localStorage.getItem('vh_bg_filter') !== 'false';
-
-  document.getElementById('mic-gain-slider').value = micGain;
-  document.getElementById('mic-gain-value').textContent = micGain + '%';
-  document.getElementById('bg-filter-toggle').checked = bgFilter;
 
   db.getUser(userId, function(err, u) {
     if (err || !u) { window.location.href = 'index.html'; return; }
@@ -27,7 +21,6 @@
     el._t = setTimeout(function() { el.style.display = 'none'; }, 3000);
   }
 
-  // Custom select
   function buildSelect(triggerId, dropdownId, textId, items, selectedId, onSelect) {
     var trigger = document.getElementById(triggerId);
     var dropdown = document.getElementById(dropdownId);
@@ -78,7 +71,6 @@
     if (!e.target.closest('.custom-select')) closeAllSelects();
   });
 
-  // Mic test
   var micStream = null;
   var animFrame = null;
 
@@ -116,7 +108,6 @@
     });
   }
 
-  // Enumerate
   function enumerateDevices() {
     navigator.mediaDevices.enumerateDevices().then(function(devices) {
       var mics = [], speakers = [];
@@ -144,23 +135,6 @@
     });
   }
 
-  // Mic gain slider
-  var gainSlider = document.getElementById('mic-gain-slider');
-  var gainValue = document.getElementById('mic-gain-value');
-  gainSlider.addEventListener('input', function() {
-    micGain = parseInt(this.value);
-    gainValue.textContent = micGain + '%';
-    localStorage.setItem('vh_mic_gain', micGain.toString());
-  });
-
-  // BG filter toggle
-  document.getElementById('bg-filter-toggle').addEventListener('change', function() {
-    bgFilter = this.checked;
-    localStorage.setItem('vh_bg_filter', bgFilter.toString());
-    notify(bgFilter ? 'Фильтр фона включён' : 'Фильтр фона выключен', 'info');
-  });
-
-  // Logout
   document.getElementById('logout-btn').addEventListener('click', function() {
     db.logout();
     window.location.href = 'index.html';

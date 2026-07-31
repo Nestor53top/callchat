@@ -13,9 +13,7 @@
   var allMuted = false;
   var micWasOnBeforeMuteAll = true;
   var localStream = null;
-  var audioCtx = null;
   var peers = {};
-  var audioNodes = {};
   var audioEls = {};
   var muteExceptIds = [];
   var talkStart = null;
@@ -31,11 +29,6 @@
     ]
   };
 
-  function ensureAudioCtx() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-  }
-
   function notify(msg, type) {
     var el = document.getElementById('notification');
     el.textContent = msg;
@@ -43,36 +36,6 @@
     el.style.display = 'block';
     clearTimeout(el._t);
     el._t = setTimeout(function() { el.style.display = 'none'; }, 3000);
-  }
-
-  // --- Noise filter for incoming audio ---
-  function createNoiseFilter(ctx, source) {
-    var hp = ctx.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = 200;
-    hp.Q.value = 0.7;
-
-    var bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 1200;
-    bp.Q.value = 1.0;
-
-    var comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -30;
-    comp.knee.value = 12;
-    comp.ratio.value = 8;
-    comp.attack.value = 0.003;
-    comp.release.value = 0.1;
-
-    source.connect(hp);
-    hp.connect(bp);
-    bp.connect(comp);
-
-    return { input: hp, output: comp, hp: hp, bp: bp, comp: comp };
-  }
-
-  function setMicGain(val) {
-    localStorage.setItem('vh_mic_gain', val.toString());
   }
 
   // --- User list ---
@@ -111,45 +74,18 @@
     if (el) el.querySelector('.mic-status').textContent = icon;
   }
 
-  // --- Remote audio with per-user processing ---
+  // --- Remote audio ---
   function addRemoteAudio(uid, stream) {
     if (audioEls[uid]) return;
 
-    ensureAudioCtx();
-
-    var source = audioCtx.createMediaStreamSource(stream);
-    var gainNode = audioCtx.createGain();
-    var savedVol = parseInt(localStorage.getItem('vh_vol_' + uid) || '100');
-    gainNode.gain.value = savedVol / 100;
-
-    var noiseFilterOn = localStorage.getItem('vh_noise_user_' + uid) === 'true';
-    var noiseFilter = null;
-    var lastNode = source;
-
-    if (noiseFilterOn) {
-      noiseFilter = createNoiseFilter(audioCtx, source);
-      lastNode = noiseFilter.output;
-    } else {
-      source.connect(gainNode);
-      lastNode = gainNode;
-    }
-
-    if (noiseFilter) {
-      noiseFilter.output.connect(gainNode);
-    }
-
-    var dest = audioCtx.createMediaStreamDestination();
-    gainNode.connect(dest);
-
     var audio = document.createElement('audio');
     audio.autoplay = true;
-    audio.srcObject = dest.stream;
+    audio.srcObject = stream;
     audio.dataset.peerId = uid;
     if (spkMuted || allMuted) audio.muted = true;
     if (muteExceptIds.length > 0) audio.muted = muteExceptIds.indexOf(uid) === -1;
     document.getElementById('audio-container').appendChild(audio);
     audioEls[uid] = audio;
-    audioNodes[uid] = { source: source, gainNode: gainNode, noiseFilter: noiseFilter, dest: dest };
 
     setMicIcon(uid, '🟢');
 
@@ -161,35 +97,7 @@
 
   function removeRemoteAudio(uid) {
     if (audioEls[uid]) { audioEls[uid].remove(); delete audioEls[uid]; }
-    if (audioNodes[uid]) {
-      try { audioNodes[uid].source.disconnect(); } catch(e) {}
-      try { audioNodes[uid].gainNode.disconnect(); } catch(e) {}
-      delete audioNodes[uid];
-    }
     setMicIcon(uid, '🔴');
-  }
-
-  function getUserGainNode(uid) {
-    return audioNodes[uid] ? audioNodes[uid].gainNode : null;
-  }
-
-  function toggleUserNoiseFilter(uid, on) {
-    if (!audioNodes[uid] || !audioCtx) return;
-    var nodes = audioNodes[uid];
-
-    if (on && !nodes.noiseFilter) {
-      var nf = createNoiseFilter(audioCtx, nodes.source);
-      nodes.source.disconnect();
-      nodes.source.connect(nf.input);
-      nf.output.connect(nodes.gainNode);
-      nodes.noiseFilter = nf;
-    } else if (!on && nodes.noiseFilter) {
-      nodes.source.disconnect();
-      nodes.noiseFilter.input.disconnect();
-      nodes.noiseFilter.output.disconnect();
-      nodes.source.connect(nodes.gainNode);
-      nodes.noiseFilter = null;
-    }
   }
 
   // --- WebRTC ---
@@ -447,12 +355,7 @@
   });
 
   // --- stats ---
-  var currentStatsUserId = null;
-  var currentStatsIsSelf = false;
-
   function showStats() {
-    currentStatsUserId = userId;
-    currentStatsIsSelf = true;
     var s = db.getStats(userId);
     document.getElementById('st-nick').textContent = myUser.nickname;
     document.getElementById('st-id').textContent = userId;
@@ -460,64 +363,26 @@
     document.getElementById('st-sessions').textContent = s.sessions || 1;
     document.getElementById('st-time').textContent = db.fmtTime(db.getTimeOnSite(userId));
     document.getElementById('st-talk').textContent = db.fmtTime(talkTime);
-    document.getElementById('user-audio-controls').classList.add('hidden');
     document.getElementById('stats-modal').classList.remove('hidden');
   }
 
   function showUserStats(u) {
-    currentStatsUserId = u.id;
-    currentStatsIsSelf = (u.id === userId);
     document.getElementById('st-nick').textContent = u.nickname;
     document.getElementById('st-id').textContent = u.id;
     document.getElementById('st-created').textContent = '—';
     document.getElementById('st-sessions').textContent = '—';
     document.getElementById('st-time').textContent = '—';
     document.getElementById('st-talk').textContent = '—';
-
-    var ctrl = document.getElementById('user-audio-controls');
-    if (!currentStatsIsSelf) {
-      ctrl.classList.remove('hidden');
-      var savedVol = parseInt(localStorage.getItem('vh_vol_' + u.id) || '100');
-      document.getElementById('user-vol-slider').value = savedVol;
-      document.getElementById('user-vol-value').textContent = savedVol + '%';
-      var noiseOn = localStorage.getItem('vh_noise_user_' + u.id) === 'true';
-      document.getElementById('user-noise-toggle').checked = noiseOn;
-    } else {
-      ctrl.classList.add('hidden');
-    }
     document.getElementById('stats-modal').classList.remove('hidden');
   }
 
   document.getElementById('my-id').addEventListener('click', showStats);
   document.getElementById('stats-btn').addEventListener('click', showStats);
 
-  // --- per-user volume slider ---
-  document.getElementById('user-vol-slider').addEventListener('input', function() {
-    var val = parseInt(this.value);
-    document.getElementById('user-vol-value').textContent = val + '%';
-    if (currentStatsUserId && !currentStatsIsSelf) {
-      localStorage.setItem('vh_vol_' + currentStatsUserId, val.toString());
-      var gn = getUserGainNode(currentStatsUserId);
-      if (gn) gn.gain.value = val / 100;
-    }
-  });
-
-  // --- per-user noise filter toggle ---
-  document.getElementById('user-noise-toggle').addEventListener('change', function() {
-    if (currentStatsUserId && !currentStatsIsSelf) {
-      var on = this.checked;
-      localStorage.setItem('vh_noise_user_' + currentStatsUserId, on.toString());
-      toggleUserNoiseFilter(currentStatsUserId, on);
-      notify(on ? 'Шумоподавление включено для пользователя' : 'Шумоподавление выключено', 'info');
-    }
-  });
-
   setInterval(function() {
     if (!document.getElementById('stats-modal').classList.contains('hidden')) {
-      if (currentStatsIsSelf) {
-        document.getElementById('st-time').textContent = db.fmtTime(db.getTimeOnSite(userId));
-        document.getElementById('st-talk').textContent = db.fmtTime(talkTime);
-      }
+      document.getElementById('st-time').textContent = db.fmtTime(db.getTimeOnSite(userId));
+      document.getElementById('st-talk').textContent = db.fmtTime(talkTime);
     }
   }, 1000);
 
@@ -538,7 +403,6 @@
     for (var i = 0; i < keys.length; i++) peers[keys[i]].close();
     if (localStream) localStream.getTracks().forEach(function(t) { t.stop(); });
     if (channel) { channel.untrack(); supa.removeChannel(channel); }
-    if (audioCtx) audioCtx.close();
     db.logout();
     window.location.href = 'index.html';
   });
