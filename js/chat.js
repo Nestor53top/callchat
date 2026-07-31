@@ -29,6 +29,59 @@
     ]
   };
 
+  var audioCtx = null;
+  var micGain = null;
+
+  function applyMicProcessing(stream) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    var source = audioCtx.createMediaStreamSource(stream);
+
+    micGain = audioCtx.createGain();
+    micGain.gain.value = 0.7;
+
+    var compressor = audioCtx.createDynamicsCompressor();
+    compressor.threshold.value = -40;
+    compressor.knee.value = 10;
+    compressor.ratio.value = 12;
+    compressor.attack.value = 0.002;
+    compressor.release.value = 0.1;
+
+    var analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    var dataArr = new Uint8Array(analyser.frequencyBinCount);
+
+    var gateGain = audioCtx.createGain();
+    gateGain.gain.value = 0;
+
+    source.connect(micGain);
+    micGain.connect(compressor);
+    compressor.connect(analyser);
+    analyser.connect(gateGain);
+
+    var dest = audioCtx.createMediaStreamDestination();
+    gateGain.connect(dest);
+
+    var gateOpen = false;
+    function checkGate() {
+      analyser.getByteFrequencyData(dataArr);
+      var sum = 0;
+      for (var i = 0; i < dataArr.length; i++) sum += dataArr[i];
+      var avg = sum / dataArr.length;
+      var target = avg > 8 ? 1 : 0;
+      if (target === 1 && !gateOpen) {
+        gateGain.gain.setTargetAtTime(1, audioCtx.currentTime, 0.01);
+        gateOpen = true;
+      } else if (target === 0 && gateOpen) {
+        gateGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
+        gateOpen = false;
+      }
+      requestAnimationFrame(checkGate);
+    }
+    checkGate();
+
+    return dest.stream;
+  }
+
   function notify(msg, type) {
     var el = document.getElementById('notification');
     el.textContent = msg;
@@ -456,13 +509,13 @@
       }
       navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
         .then(function(stream) {
-          localStream = stream;
+          localStream = applyMicProcessing(stream);
           joinRoom();
         })
         .catch(function(err) {
           navigator.mediaDevices.getUserMedia({ audio: true })
             .then(function(stream) {
-              localStream = stream;
+              localStream = applyMicProcessing(stream);
               joinRoom();
             })
             .catch(function(err2) {
