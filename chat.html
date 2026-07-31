@@ -31,6 +31,11 @@
           <h3>Управление</h3>
           <button class="control-btn" id="mute-mic-btn">🎤 Выкл. микрофон</button>
           <button class="control-btn" id="mute-spk-btn">🔊 Выкл. звук</button>
+          <div class="volume-row">
+            <span>🔊 Громкость</span>
+            <input type="range" class="custom-slider" id="spk-vol-slider" min="0" max="100" value="70">
+            <span class="slider-value" id="spk-vol-value">70%</span>
+          </div>
           <button class="control-btn" id="mute-all-btn">🔇 Замутить всех</button>
           <button class="control-btn" id="mute-except-btn">🔇 К except</button>
         </div>

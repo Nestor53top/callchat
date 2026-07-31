@@ -82,6 +82,8 @@
     audio.autoplay = true;
     audio.srcObject = stream;
     audio.dataset.peerId = uid;
+    var vol = parseInt(localStorage.getItem('vh_spk_vol') || '70');
+    audio.volume = vol / 100;
     if (spkMuted || allMuted) audio.muted = true;
     if (muteExceptIds.length > 0) audio.muted = muteExceptIds.indexOf(uid) === -1;
     document.getElementById('audio-container').appendChild(audio);
@@ -289,6 +291,26 @@
     this.classList.toggle('active', spkMuted);
   });
 
+  // --- speaker volume ---
+  var savedVol = parseInt(localStorage.getItem('vh_spk_vol') || '70');
+  document.getElementById('spk-vol-slider').value = savedVol;
+  document.getElementById('spk-vol-value').textContent = savedVol + '%';
+  applySpeakerVolume(savedVol);
+
+  function applySpeakerVolume(val) {
+    var keys = Object.keys(audioEls);
+    for (var i = 0; i < keys.length; i++) {
+      audioEls[keys[i]].volume = val / 100;
+    }
+  }
+
+  document.getElementById('spk-vol-slider').addEventListener('input', function() {
+    var val = parseInt(this.value);
+    document.getElementById('spk-vol-value').textContent = val + '%';
+    localStorage.setItem('vh_spk_vol', val.toString());
+    applySpeakerVolume(val);
+  });
+
   // --- mute all ---
   document.getElementById('mute-all-btn').addEventListener('click', function() {
     allMuted = !allMuted;
@@ -429,17 +451,24 @@
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       var savedMic = localStorage.getItem('vh_mic');
       var audioConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-      if (savedMic && savedMic !== 'default') audioConstraints.deviceId = { exact: savedMic };
+      if (savedMic && savedMic !== 'default' && savedMic !== 'defaultinput') {
+        audioConstraints.deviceId = { exact: savedMic };
+      }
       navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
         .then(function(stream) {
           localStream = stream;
           joinRoom();
         })
         .catch(function(err) {
-          notify('Микрофон недоступен: ' + err.message, 'error');
-          document.getElementById('call-status').innerHTML =
-            '<div class="status-icon">🔇</div><h2>Микрофон недоступен</h2><p>Разрешите доступ к микрофону и обновите страницу</p>';
-          joinRoom();
+          navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(function(stream) {
+              localStream = stream;
+              joinRoom();
+            })
+            .catch(function(err2) {
+              notify('Микрофон недоступен: ' + err2.message, 'error');
+              joinRoom();
+            });
         });
     } else {
       notify('Микрофон недоступен (нужен HTTPS)', 'error');

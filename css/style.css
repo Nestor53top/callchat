@@ -242,6 +242,30 @@ main { display: flex; flex: 1; overflow: hidden; }
 .control-btn:hover { background: var(--card-h); border-color: var(--brd2); }
 .control-btn.active { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.3); color: #fca5a5; }
 
+.volume-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--txt);
+}
+
+.volume-row span { min-width: 80px; }
+
+.volume-row .custom-slider {
+  flex: 1;
+  height: 4px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+}
+
+.volume-row .slider-value {
+  min-width: 36px;
+  text-align: right;
+}
+
 /* MAIN AREA */
 #main-area {
   flex: 1;
