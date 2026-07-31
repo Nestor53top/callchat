@@ -428,7 +428,7 @@
 
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       var savedMic = localStorage.getItem('vh_mic');
-      var audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+      var audioConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
       if (savedMic && savedMic !== 'default') audioConstraints.deviceId = { exact: savedMic };
       navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
         .then(function(stream) {
