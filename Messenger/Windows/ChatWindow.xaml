@@ -1,0 +1,101 @@
+<Window x:Class="Messenger.Windows.ChatWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="VoiceHub Messenger" Height="650" Width="900"
+        Background="{StaticResource BgBrush}" WindowStartupLocation="CenterScreen">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="260"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Sidebar -->
+        <Border Grid.Column="0" Background="{StaticResource Bg2Brush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Padding="16,14" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                    <StackPanel>
+                        <TextBlock Text="VoiceHub" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                        <TextBlock x:Name="MyNickText" FontSize="12" Foreground="{StaticResource Txt2Brush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <ListBox x:Name="ContactsList" Grid.Row="1" Background="Transparent" BorderThickness="0" SelectionChanged="Contact_Selected">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border Padding="14,10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Cursor="Hand">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Width="36" Height="36" CornerRadius="18" Margin="0,0,10,0" Background="{Binding Color}">
+                                        <TextBlock Text="{Binding FirstChar}" Foreground="White" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Text="{Binding Nickname}" Foreground="{StaticResource TxtBrush}" FontSize="14" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <Button Grid.Row="2" Content="Выйти" Click="Logout_Click" HorizontalAlignment="Stretch" Background="Transparent" Foreground="{StaticResource RedBrush}" BorderThickness="0" FontSize="13" Cursor="Hand" Padding="0,12"/>
+            </Grid>
+        </Border>
+
+        <!-- Chat -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Padding="20,14" Background="{StaticResource Bg2Brush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                <TextBlock x:Name="ChatHeader" Text="Выберите чат" Foreground="{StaticResource TxtBrush}" FontSize="15" FontWeight="SemiBold"/>
+            </Border>
+
+            <ScrollViewer x:Name="MsgScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="MsgList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="16,3">
+                                <Border MaxWidth="450" Padding="12,8" CornerRadius="12" Background="#1e1e30" HorizontalAlignment="Left">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsMine}" Value="True">
+                                                    <Setter Property="Background" Value="#4c1d95"/>
+                                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding SenderName}" Foreground="{StaticResource Txt2Brush}" FontSize="11" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding Content}" Foreground="{StaticResource TxtBrush}" FontSize="14" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding Time}" Foreground="{StaticResource Txt3Brush}" FontSize="10" HorizontalAlignment="Right" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <Border Grid.Row="2" Padding="16,12" Background="{StaticResource Bg2Brush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="MsgInput" Grid.Column="0" Style="{StaticResource InputBox}" IsEnabled="False" KeyDown="MsgInput_KeyDown"/>
+                    <Button x:Name="SendBtn" Grid.Column="1" Content="➤" Margin="10,0,0,0" Width="40" Height="38" Click="Send_Click" IsEnabled="False" Background="{StaticResource AccentBrush}" Foreground="White" BorderThickness="0" FontSize="18" Cursor="Hand"/>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <TextBlock x:Name="Placeholder" Grid.Column="1" Text="Выберите чат" Foreground="{StaticResource Txt3Brush}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    </Grid>
+</Window>

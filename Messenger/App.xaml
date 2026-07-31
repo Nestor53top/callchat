@@ -1,0 +1,57 @@
+﻿<Application x:Class="Messenger.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="Windows/LoginWindow.xaml">
+    <Application.Resources>
+        <Color x:Key="BgColor">#0a0a12</Color>
+        <Color x:Key="Bg2Color">#12121e</Color>
+        <Color x:Key="AccentColor">#7c3aed</Color>
+        <Color x:Key="TxtColor">#e2e8f0</Color>
+        <Color x:Key="Txt2Color">#94a3b8</Color>
+        <Color x:Key="Txt3Color">#64748b</Color>
+        <Color x:Key="RedColor">#ef4444</Color>
+
+        <SolidColorBrush x:Key="BgBrush" Color="{StaticResource BgColor}"/>
+        <SolidColorBrush x:Key="Bg2Brush" Color="{StaticResource Bg2Color}"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}"/>
+        <SolidColorBrush x:Key="TxtBrush" Color="{StaticResource TxtColor}"/>
+        <SolidColorBrush x:Key="Txt2Brush" Color="{StaticResource Txt2Color}"/>
+        <SolidColorBrush x:Key="Txt3Brush" Color="{StaticResource Txt3Color}"/>
+        <SolidColorBrush x:Key="RedBrush" Color="{StaticResource RedColor}"/>
+        <SolidColorBrush x:Key="BorderBrush" Color="#1a1a2e"/>
+
+        <Style x:Key="AccentBtn" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#6d28d9"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="InputBox" TargetType="TextBox">
+            <Setter Property="Background" Value="#0f0f1a"/>
+            <Setter Property="Foreground" Value="{StaticResource TxtBrush}"/>
+            <Setter Property="BorderBrush" Value="#2a2a3e"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="CaretBrush" Value="White"/>
+        </Style>
+    </Application.Resources>
+</Application>
