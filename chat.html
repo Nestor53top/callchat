@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceHub — Чат</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app" class="app-screen hidden">
+    <header>
+      <div class="logo">VoiceHub</div>
+      <div class="user-info">
+        <span class="nickname" id="my-nickname"></span>
+        <span class="id-badge" id="my-id" title="Нажмите для статистики"></span>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="stats-btn" title="Статистика">📊</button>
+        <button class="icon-btn danger" id="logout-btn" title="Выйти">🚪</button>
+      </div>
+    </header>
+
+    <main>
+      <aside id="sidebar">
+        <div class="sidebar-header">
+          <h3>В чате: <span id="online-count">0</span></h3>
+        </div>
+        <div id="user-list"></div>
+        <div class="controls">
+          <h3>Управление</h3>
+          <button class="control-btn" id="mute-mic-btn">🎤 Выкл. микрофон</button>
+          <button class="control-btn" id="mute-spk-btn">🔊 Выкл. звук</button>
+          <button class="control-btn" id="mute-except-btn">🔇 К except</button>
+        </div>
+      </aside>
+
+      <section id="main-area">
+        <div id="call-status">
+          <div class="status-icon">🎙️</div>
+          <h2>Вы в голосовом чате</h2>
+          <p>Подключено к общему каналу</p>
+          <div class="wave-container">
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+          </div>
+        </div>
+        <div id="audio-container"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Stats Modal -->
+  <div id="stats-modal" class="modal hidden">
+    <div class="modal-content">
+      <button class="close-btn" data-close>&times;</button>
+      <h2>Статистика</h2>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <h4>Данные</h4>
+          <div class="stat-info">
+            <p>Никнейм: <span id="st-nick"></span></p>
+            <p>ID: <span id="st-id" class="mono"></span></p>
+            <p>Создан: <span id="st-created"></span></p>
+            <p>Сессий: <span id="st-sessions"></span></p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <h4>Время на сайте</h4>
+          <div class="stat-value" id="st-time">0м 0с</div>
+        </div>
+        <div class="stat-card">
+          <h4>Время разговора</h4>
+          <div class="stat-value" id="st-talk">0м 0с</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mute Except Modal -->
+  <div id="except-modal" class="modal hidden">
+    <div class="modal-content">
+      <button class="close-btn" data-close>&times;</button>
+      <h2>Мут всех кроме</h2>
+      <p class="muted-text">Выберите кого слышать:</p>
+      <div id="except-list"></div>
+      <button class="primary-btn" id="apply-except">Применить</button>
+    </div>
+  </div>
+
+  <!-- Notification -->
+  <div id="notification"></div>
+
+  <script src="js/database.js"></script>
+  <script src="js/chat.js"></script>
+</body>
+</html>

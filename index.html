@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceHub</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="auth-screen">
+    <div class="auth-container">
+      <h1>VoiceHub</h1>
+      <p class="subtitle">Голосовой чат без границ</p>
+
+      <div class="input-group">
+        <label for="nickname">Никнейм</label>
+        <input type="text" id="nickname" placeholder="Ваш никнейм" minlength="2">
+      </div>
+
+      <div class="input-group">
+        <label for="password">Пароль</label>
+        <input type="password" id="password" placeholder="Пароль" minlength="4">
+      </div>
+
+      <div class="input-group hidden" id="confirm-group">
+        <label for="confirm-password">Повторите пароль</label>
+        <input type="password" id="confirm-password" placeholder="Повторите пароль">
+      </div>
+
+      <button type="button" class="auth-btn" id="auth-btn">Войти</button>
+      <p class="auth-error" id="auth-error"></p>
+
+      <p class="auth-link">
+        Нет аккаунта? <a href="#" id="auth-toggle">Создать</a>
+      </p>
+    </div>
+  </div>
+
+  <script src="js/database.js"></script>
+  <script src="js/auth.js"></script>
+</body>
+</html>
