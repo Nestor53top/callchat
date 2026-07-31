@@ -96,7 +96,12 @@
 
   // --- WebRTC ---
   function createPeer(remoteId, initiator) {
-    if (peers[remoteId]) peers[remoteId].close();
+    if (peers[remoteId]) {
+      var existing = peers[remoteId];
+      if (existing.connectionState === 'connected' || existing.connectionState === 'connecting') return;
+      existing.close();
+      delete peers[remoteId];
+    }
     var pc = new RTCPeerConnection(iceConfig);
     peers[remoteId] = pc;
 
@@ -171,7 +176,9 @@
           nowKnown[p.uid] = p;
           if (!knownUsers[p.uid] && p.uid !== userId) {
             addUserToList({ id: p.uid, nickname: p.nickname, color: p.color }, false);
-            createPeer(p.uid, true);
+            (function(uid, nick) {
+              setTimeout(function() { createPeer(uid, true); }, 500);
+            })(p.uid, p.nickname);
             notify(p.nickname + ' присоединился', 'info');
             startTalk();
           }
@@ -194,7 +201,9 @@
         var p = payload.newPresences[i];
         if (p.uid !== userId && !knownUsers[p.uid]) {
           addUserToList({ id: p.uid, nickname: p.nickname, color: p.color }, false);
-          createPeer(p.uid, true);
+          (function(uid) {
+            setTimeout(function() { createPeer(uid, true); }, 500);
+          })(p.uid);
           notify(p.nickname + ' присоединился', 'info');
           startTalk();
         }
