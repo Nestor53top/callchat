@@ -369,7 +369,14 @@
 
   // --- init ---
   db.getUser(userId, function(err, u) {
-    if (err || !u) { window.location.href = 'index.html'; return; }
+    if (err || !u) {
+      document.getElementById('app').classList.remove('hidden');
+      document.getElementById('call-status').innerHTML =
+        '<div class="status-icon">❌</div><h2>Пользователь не найден</h2><p>Попробуйте перезайти или выйти</p>' +
+        '<button onclick="localStorage.removeItem(\'vh_session\');window.location.href=\'index.html\'" ' +
+        'style="margin-top:20px;padding:10px 24px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer">Выйти</button>';
+      return;
+    }
     myUser = u;
     document.getElementById('app').classList.remove('hidden');
     document.getElementById('my-nickname').textContent = u.nickname;
