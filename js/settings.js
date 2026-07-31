@@ -28,25 +28,18 @@
     el._t = setTimeout(function() { el.style.display = 'none'; }, 3000);
   }
 
-  // --- custom select logic ---
-  function setupSelect(triggerId, dropdownId, textId, items, selectedId, onSelect) {
+  // ---- Custom Select ----
+  function buildSelect(triggerId, dropdownId, textId, items, selectedId, onSelect) {
     var trigger = document.getElementById(triggerId);
     var dropdown = document.getElementById(dropdownId);
     var textEl = document.getElementById(textId);
-    var isOpen = false;
 
-    var selected = items.find(function(d) { return d.id === selectedId; });
-    textEl.textContent = selected ? selected.label : items.length > 0 ? items[0].label : 'Нет устройств';
-
-    trigger.addEventListener('click', function(e) {
-      e.stopPropagation();
-      // close other dropdowns
-      document.querySelectorAll('.select-dropdown').forEach(function(d) { d.classList.remove('open'); });
-      document.querySelectorAll('.select-trigger').forEach(function(t) { t.classList.remove('open'); });
-      isOpen = !isOpen;
-      dropdown.classList.toggle('open', isOpen);
-      trigger.classList.toggle('open', isOpen);
-    });
+    var selected = null;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].id === selectedId) { selected = items[i]; break; }
+    }
+    if (!selected && items.length > 0) selected = items[0];
+    textEl.textContent = selected ? selected.label : 'Нет устройств';
 
     dropdown.innerHTML = '';
     items.forEach(function(device) {
@@ -54,16 +47,19 @@
       opt.className = 'select-option' + (device.id === selectedId ? ' selected' : '');
       opt.textContent = device.label;
       opt.dataset.id = device.id;
-      opt.addEventListener('click', function(e) {
+
+      opt.addEventListener('mousedown', function(e) {
+        e.preventDefault();
         e.stopPropagation();
         textEl.textContent = device.label;
-        dropdown.querySelectorAll('.select-option').forEach(function(o) { o.classList.remove('selected'); });
+        var allOpts = dropdown.querySelectorAll('.select-option');
+        for (var j = 0; j < allOpts.length; j++) allOpts[j].classList.remove('selected');
         opt.classList.add('selected');
-        dropdown.classList.remove('open');
         trigger.classList.remove('open');
-        isOpen = false;
+        dropdown.classList.remove('open');
         onSelect(device.id);
       });
+
       dropdown.appendChild(opt);
     });
 
@@ -73,59 +69,41 @@
       empty.textContent = 'Устройства не найдены';
       dropdown.appendChild(empty);
     }
-  }
 
-  document.addEventListener('click', function() {
-    document.querySelectorAll('.select-dropdown').forEach(function(d) { d.classList.remove('open'); });
-    document.querySelectorAll('.select-trigger').forEach(function(t) { t.classList.remove('open'); });
-  });
-
-  // --- enumerate devices ---
-  var micStream = null;
-  var analyser = null;
-  var animFrame = null;
-
-  function enumerateDevices() {
-    navigator.mediaDevices.enumerateDevices().then(function(devices) {
-      var mics = devices.filter(function(d) { return d.kind === 'audioinput'; }).map(function(d, i) {
-        return { id: d.deviceId, label: d.label || ('Микрофон ' + (i + 1)) };
-      });
-      var speakers = devices.filter(function(d) { return d.kind === 'audiooutput'; }).map(function(d, i) {
-        return { id: d.deviceId, label: d.label || ('Динамик ' + (i + 1)) };
-      });
-
-      if (mics.length === 0) mics.push({ id: 'default', label: 'Микрофон по умолчанию' });
-      if (speakers.length === 0) speakers.push({ id: 'default', label: 'Динамики по умолчанию' });
-
-      var selectedMic = currentMic || mics[0].id;
-      var selectedSpk = currentSpk || speakers[0].id;
-
-      setupSelect('mic-trigger', 'mic-dropdown', 'mic-text', mics, selectedMic, function(id) {
-        currentMic = id;
-        localStorage.setItem('vh_mic', id);
-        startMicTest(id);
-        notify('Микрофон изменён', 'info');
-      });
-
-      setupSelect('spk-trigger', 'spk-dropdown', 'spk-text', speakers, selectedSpk, function(id) {
-        currentSpk = id;
-        localStorage.setItem('vh_spk', id);
-        notify('Наушники изменены', 'info');
-      });
-
-      startMicTest(selectedMic);
-    }).catch(function(err) {
-      console.error('enumerateDevices err', err);
+    trigger.addEventListener('click', function(e) {
+      e.stopPropagation();
+      closeAllSelects();
+      var isOpen = dropdown.classList.contains('open');
+      if (!isOpen) {
+        trigger.classList.add('open');
+        dropdown.classList.add('open');
+      }
     });
   }
 
-  // --- mic test with visualizer ---
+  function closeAllSelects() {
+    document.querySelectorAll('.select-dropdown').forEach(function(d) { d.classList.remove('open'); });
+    document.querySelectorAll('.select-trigger').forEach(function(t) { t.classList.remove('open'); });
+  }
+
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.custom-select')) closeAllSelects();
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeAllSelects();
+  });
+
+  // ---- Mic test ----
+  var micStream = null;
+  var animFrame = null;
+
   function startMicTest(deviceId) {
     if (micStream) {
       micStream.getTracks().forEach(function(t) { t.stop(); });
       micStream = null;
     }
-    if (animFrame) cancelAnimationFrame(animFrame);
+    if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
 
     var constraints = { audio: true };
     if (deviceId && deviceId !== 'default') {
@@ -134,9 +112,10 @@
 
     navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
       micStream = stream;
-      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var AudioContext = window.AudioContext || window.webkitAudioContext;
+      var ctx = new AudioContext();
       var src = ctx.createMediaStreamSource(stream);
-      analyser = ctx.createAnalyser();
+      var analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       src.connect(analyser);
 
@@ -148,13 +127,13 @@
         analyser.getByteFrequencyData(data);
         var avg = 0;
         for (var i = 0; i < data.length; i++) avg += data[i];
-        avg = avg / data.length;
-        var pct = Math.min(100, (avg / 128) * 100);
+        avg /= data.length;
+        var pct = Math.min(100, Math.max(2, (avg / 128) * 100));
         bar.style.width = pct + '%';
 
         if (pct < 5) levelText.textContent = 'Тихо...';
-        else if (pct < 30) levelText.textContent = 'Нормально';
-        else if (pct < 70) levelText.textContent = 'Громко';
+        else if (pct < 25) levelText.textContent = 'Нормально';
+        else if (pct < 60) levelText.textContent = 'Громко';
         else levelText.textContent = 'Очень громко!';
 
         animFrame = requestAnimationFrame(draw);
@@ -165,28 +144,64 @@
     });
   }
 
-  // --- toggles ---
+  // ---- Enumerate devices ----
+  function enumerateDevices() {
+    navigator.mediaDevices.enumerateDevices().then(function(devices) {
+      var mics = [];
+      var speakers = [];
+
+      for (var i = 0; i < devices.length; i++) {
+        var d = devices[i];
+        if (d.kind === 'audioinput') {
+          mics.push({ id: d.deviceId, label: d.label || ('Микрофон ' + (mics.length + 1)) });
+        } else if (d.kind === 'audiooutput') {
+          speakers.push({ id: d.deviceId, label: d.label || ('Динамик ' + (speakers.length + 1)) });
+        }
+      }
+
+      if (mics.length === 0) mics.push({ id: 'default', label: 'Микрофон по умолчанию' });
+      if (speakers.length === 0) speakers.push({ id: 'default', label: 'Динамики по умолчанию' });
+
+      var selMic = currentMic || mics[0].id;
+      var selSpk = currentSpk || speakers[0].id;
+
+      buildSelect('mic-trigger', 'mic-dropdown', 'mic-text', mics, selMic, function(id) {
+        currentMic = id;
+        localStorage.setItem('vh_mic', id);
+        startMicTest(id);
+        notify('Микрофон сохранён', 'info');
+      });
+
+      buildSelect('spk-trigger', 'spk-dropdown', 'spk-text', speakers, selSpk, function(id) {
+        currentSpk = id;
+        localStorage.setItem('vh_spk', id);
+        notify('Наушники сохранены', 'info');
+      });
+
+      startMicTest(selMic);
+    });
+  }
+
+  // ---- Toggles ----
   document.getElementById('noise-toggle').addEventListener('change', function() {
     localStorage.setItem('vh_noise', this.checked);
-    notify(this.checked ? 'Подавление шума включено' : 'Подавление шума выключено', 'info');
+    notify(this.checked ? 'Подавление шума вкл' : 'Подавление шума выкл', 'info');
   });
-
   document.getElementById('echo-toggle').addEventListener('change', function() {
     localStorage.setItem('vh_echo', this.checked);
-    notify(this.checked ? 'Эхоподавление включено' : 'Эхоподавление выключено', 'info');
+    notify(this.checked ? 'Эхоподавление вкл' : 'Эхоподавление выкл', 'info');
   });
-
   document.getElementById('agc-toggle').addEventListener('change', function() {
     localStorage.setItem('vh_agc', this.checked);
-    notify(this.checked ? 'Автодогонка громкости включена' : 'Автодогонка громкости выключена', 'info');
+    notify(this.checked ? 'Автодогонка вкл' : 'Автодогонка выкл', 'info');
   });
 
-  // --- logout ---
+  // ---- Logout ----
   document.getElementById('logout-btn').addEventListener('click', function() {
     db.logout();
     window.location.href = 'index.html';
   });
 
-  // --- init ---
+  // ---- Init ----
   enumerateDevices();
 })();
