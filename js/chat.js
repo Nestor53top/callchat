@@ -82,6 +82,11 @@
     document.getElementById('audio-container').appendChild(audio);
     audioEls[uid] = audio;
     setMicIcon(uid, '🟢');
+    // apply saved speaker
+    var savedSpk = localStorage.getItem('vh_spk');
+    if (savedSpk && savedSpk !== 'default' && typeof audio.setSinkId === 'function') {
+      audio.setSinkId(savedSpk).catch(function() {});
+    }
   }
 
   function removeRemoteAudio(uid) {
@@ -367,7 +372,13 @@
     else db.saveStats(userId, { loginTime: Date.now(), sessions: (stats.sessions || 0) + 1 });
 
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+      var savedMic = localStorage.getItem('vh_mic');
+      var noiseOn = localStorage.getItem('vh_noise') !== 'false';
+      var echoOn = localStorage.getItem('vh_echo') !== 'false';
+      var agcOn = localStorage.getItem('vh_agc') !== 'false';
+      var audioConstraints = { echoCancellation: echoOn, noiseSuppression: noiseOn, autoGainControl: agcOn };
+      if (savedMic && savedMic !== 'default') audioConstraints.deviceId = { exact: savedMic };
+      navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
         .then(function(stream) {
           localStream = stream;
           joinRoom();
