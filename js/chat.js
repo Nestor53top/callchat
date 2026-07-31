@@ -62,18 +62,24 @@
     gateGain.connect(dest);
 
     var gateOpen = false;
+    var silentFrames = 0;
     function checkGate() {
       analyser.getByteFrequencyData(dataArr);
       var sum = 0;
       for (var i = 0; i < dataArr.length; i++) sum += dataArr[i];
       var avg = sum / dataArr.length;
-      var target = avg > 8 ? 1 : 0;
-      if (target === 1 && !gateOpen) {
-        gateGain.gain.setTargetAtTime(1, audioCtx.currentTime, 0.01);
-        gateOpen = true;
-      } else if (target === 0 && gateOpen) {
-        gateGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
-        gateOpen = false;
+      if (avg > 20) {
+        silentFrames = 0;
+        if (!gateOpen) {
+          gateGain.gain.setTargetAtTime(1, audioCtx.currentTime, 0.005);
+          gateOpen = true;
+        }
+      } else {
+        silentFrames++;
+        if (gateOpen && silentFrames > 3) {
+          gateGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.02);
+          gateOpen = false;
+        }
       }
       requestAnimationFrame(checkGate);
     }
