@@ -31,6 +31,7 @@
           <h3>Управление</h3>
           <button class="control-btn" id="mute-mic-btn">🎤 Выкл. микрофон</button>
           <button class="control-btn" id="mute-spk-btn">🔊 Выкл. звук</button>
+          <button class="control-btn" id="mute-all-btn">🔇 Замутить всех</button>
           <button class="control-btn" id="mute-except-btn">🔇 К except</button>
         </div>
       </aside>
@@ -75,6 +76,22 @@
         <div class="stat-card">
           <h4>Время разговора</h4>
           <div class="stat-value" id="st-talk">0м 0с</div>
+        </div>
+      </div>
+
+      <div id="user-audio-controls" class="hidden">
+        <h4 style="margin-top:20px">Настройки звука для этого пользователя</h4>
+        <div class="slider-row">
+          <span class="slider-label">0%</span>
+          <input type="range" class="custom-slider" id="user-vol-slider" min="0" max="200" value="100">
+          <span class="slider-value" id="user-vol-value">100%</span>
+        </div>
+        <div class="toggle-row" style="margin-top:12px">
+          <span>Подавление шума (локально)</span>
+          <label class="toggle">
+            <input type="checkbox" id="user-noise-toggle">
+            <span class="toggle-slider"></span>
+          </label>
         </div>
       </div>
     </div>

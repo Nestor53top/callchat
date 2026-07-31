@@ -5,13 +5,12 @@
 
   var currentMic = localStorage.getItem('vh_mic') || '';
   var currentSpk = localStorage.getItem('vh_spk') || '';
-  var noiseEnabled = localStorage.getItem('vh_noise') !== 'false';
-  var echoEnabled = localStorage.getItem('vh_echo') !== 'false';
-  var agcEnabled = localStorage.getItem('vh_agc') !== 'false';
+  var micGain = parseInt(localStorage.getItem('vh_mic_gain') || '100');
+  var bgFilter = localStorage.getItem('vh_bg_filter') !== 'false';
 
-  document.getElementById('noise-toggle').checked = noiseEnabled;
-  document.getElementById('echo-toggle').checked = echoEnabled;
-  document.getElementById('agc-toggle').checked = agcEnabled;
+  document.getElementById('mic-gain-slider').value = micGain;
+  document.getElementById('mic-gain-value').textContent = micGain + '%';
+  document.getElementById('bg-filter-toggle').checked = bgFilter;
 
   db.getUser(userId, function(err, u) {
     if (err || !u) { window.location.href = 'index.html'; return; }
@@ -28,26 +27,22 @@
     el._t = setTimeout(function() { el.style.display = 'none'; }, 3000);
   }
 
-  // ---- Custom Select ----
+  // Custom select
   function buildSelect(triggerId, dropdownId, textId, items, selectedId, onSelect) {
     var trigger = document.getElementById(triggerId);
     var dropdown = document.getElementById(dropdownId);
     var textEl = document.getElementById(textId);
-
     var selected = null;
     for (var i = 0; i < items.length; i++) {
       if (items[i].id === selectedId) { selected = items[i]; break; }
     }
     if (!selected && items.length > 0) selected = items[0];
     textEl.textContent = selected ? selected.label : 'Нет устройств';
-
     dropdown.innerHTML = '';
     items.forEach(function(device) {
       var opt = document.createElement('div');
       opt.className = 'select-option' + (device.id === selectedId ? ' selected' : '');
       opt.textContent = device.label;
-      opt.dataset.id = device.id;
-
       opt.addEventListener('mousedown', function(e) {
         e.preventDefault();
         e.stopPropagation();
@@ -59,25 +54,19 @@
         dropdown.classList.remove('open');
         onSelect(device.id);
       });
-
       dropdown.appendChild(opt);
     });
-
     if (items.length === 0) {
       var empty = document.createElement('div');
       empty.className = 'select-option disabled';
       empty.textContent = 'Устройства не найдены';
       dropdown.appendChild(empty);
     }
-
     trigger.addEventListener('click', function(e) {
       e.stopPropagation();
       closeAllSelects();
-      var isOpen = dropdown.classList.contains('open');
-      if (!isOpen) {
-        trigger.classList.add('open');
-        dropdown.classList.add('open');
-      }
+      trigger.classList.add('open');
+      dropdown.classList.add('open');
     });
   }
 
@@ -85,44 +74,29 @@
     document.querySelectorAll('.select-dropdown').forEach(function(d) { d.classList.remove('open'); });
     document.querySelectorAll('.select-trigger').forEach(function(t) { t.classList.remove('open'); });
   }
-
   document.addEventListener('click', function(e) {
     if (!e.target.closest('.custom-select')) closeAllSelects();
   });
 
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeAllSelects();
-  });
-
-  // ---- Mic test ----
+  // Mic test
   var micStream = null;
   var animFrame = null;
 
   function startMicTest(deviceId) {
-    if (micStream) {
-      micStream.getTracks().forEach(function(t) { t.stop(); });
-      micStream = null;
-    }
-    if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
-
+    if (micStream) { micStream.getTracks().forEach(function(t) { t.stop(); }); micStream = null; }
+    if (animFrame) cancelAnimationFrame(animFrame);
     var constraints = { audio: true };
-    if (deviceId && deviceId !== 'default') {
-      constraints.audio = { deviceId: { exact: deviceId } };
-    }
-
+    if (deviceId && deviceId !== 'default') constraints.audio = { deviceId: { exact: deviceId } };
     navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
       micStream = stream;
-      var AudioContext = window.AudioContext || window.webkitAudioContext;
-      var ctx = new AudioContext();
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
       var src = ctx.createMediaStreamSource(stream);
       var analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       src.connect(analyser);
-
       var bar = document.getElementById('mic-bar');
       var levelText = document.getElementById('mic-level-text');
       var data = new Uint8Array(analyser.frequencyBinCount);
-
       function draw() {
         analyser.getByteFrequencyData(data);
         var avg = 0;
@@ -130,12 +104,10 @@
         avg /= data.length;
         var pct = Math.min(100, Math.max(2, (avg / 128) * 100));
         bar.style.width = pct + '%';
-
         if (pct < 5) levelText.textContent = 'Тихо...';
         else if (pct < 25) levelText.textContent = 'Нормально';
         else if (pct < 60) levelText.textContent = 'Громко';
         else levelText.textContent = 'Очень громко!';
-
         animFrame = requestAnimationFrame(draw);
       }
       draw();
@@ -144,64 +116,55 @@
     });
   }
 
-  // ---- Enumerate devices ----
+  // Enumerate
   function enumerateDevices() {
     navigator.mediaDevices.enumerateDevices().then(function(devices) {
-      var mics = [];
-      var speakers = [];
-
+      var mics = [], speakers = [];
       for (var i = 0; i < devices.length; i++) {
         var d = devices[i];
-        if (d.kind === 'audioinput') {
-          mics.push({ id: d.deviceId, label: d.label || ('Микрофон ' + (mics.length + 1)) });
-        } else if (d.kind === 'audiooutput') {
-          speakers.push({ id: d.deviceId, label: d.label || ('Динамик ' + (speakers.length + 1)) });
-        }
+        if (d.kind === 'audioinput') mics.push({ id: d.deviceId, label: d.label || ('Микрофон ' + (mics.length + 1)) });
+        else if (d.kind === 'audiooutput') speakers.push({ id: d.deviceId, label: d.label || ('Динамик ' + (speakers.length + 1)) });
       }
-
       if (mics.length === 0) mics.push({ id: 'default', label: 'Микрофон по умолчанию' });
       if (speakers.length === 0) speakers.push({ id: 'default', label: 'Динамики по умолчанию' });
-
       var selMic = currentMic || mics[0].id;
       var selSpk = currentSpk || speakers[0].id;
-
       buildSelect('mic-trigger', 'mic-dropdown', 'mic-text', mics, selMic, function(id) {
         currentMic = id;
         localStorage.setItem('vh_mic', id);
         startMicTest(id);
         notify('Микрофон сохранён', 'info');
       });
-
       buildSelect('spk-trigger', 'spk-dropdown', 'spk-text', speakers, selSpk, function(id) {
         currentSpk = id;
         localStorage.setItem('vh_spk', id);
         notify('Наушники сохранены', 'info');
       });
-
       startMicTest(selMic);
     });
   }
 
-  // ---- Toggles ----
-  document.getElementById('noise-toggle').addEventListener('change', function() {
-    localStorage.setItem('vh_noise', this.checked);
-    notify(this.checked ? 'Подавление шума вкл' : 'Подавление шума выкл', 'info');
-  });
-  document.getElementById('echo-toggle').addEventListener('change', function() {
-    localStorage.setItem('vh_echo', this.checked);
-    notify(this.checked ? 'Эхоподавление вкл' : 'Эхоподавление выкл', 'info');
-  });
-  document.getElementById('agc-toggle').addEventListener('change', function() {
-    localStorage.setItem('vh_agc', this.checked);
-    notify(this.checked ? 'Автодогонка вкл' : 'Автодогонка выкл', 'info');
+  // Mic gain slider
+  var gainSlider = document.getElementById('mic-gain-slider');
+  var gainValue = document.getElementById('mic-gain-value');
+  gainSlider.addEventListener('input', function() {
+    micGain = parseInt(this.value);
+    gainValue.textContent = micGain + '%';
+    localStorage.setItem('vh_mic_gain', micGain.toString());
   });
 
-  // ---- Logout ----
+  // BG filter toggle
+  document.getElementById('bg-filter-toggle').addEventListener('change', function() {
+    bgFilter = this.checked;
+    localStorage.setItem('vh_bg_filter', bgFilter.toString());
+    notify(bgFilter ? 'Фильтр фона включён' : 'Фильтр фона выключен', 'info');
+  });
+
+  // Logout
   document.getElementById('logout-btn').addEventListener('click', function() {
     db.logout();
     window.location.href = 'index.html';
   });
 
-  // ---- Init ----
   enumerateDevices();
 })();

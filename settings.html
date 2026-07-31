@@ -51,25 +51,22 @@
       </div>
 
       <div class="settings-section">
-        <h2>🎛️ Качество</h2>
-        <div class="toggle-row">
-          <span>Подавление шума</span>
-          <label class="toggle">
-            <input type="checkbox" id="noise-toggle" checked>
-            <span class="toggle-slider"></span>
-          </label>
+        <h2>🎚️ Громкость микрофона</h2>
+        <p class="settings-desc">Увеличьте громкость своего голоса (до 200%)</p>
+        <div class="slider-row">
+          <span class="slider-label">0%</span>
+          <input type="range" class="custom-slider" id="mic-gain-slider" min="0" max="200" value="100">
+          <span class="slider-value" id="mic-gain-value">100%</span>
         </div>
+      </div>
+
+      <div class="settings-section">
+        <h2>🔇 Подавление фона</h2>
+        <p class="settings-desc">Убирает шум вентилятора, кондиционера, фона</p>
         <div class="toggle-row">
-          <span>Эхоподавление</span>
+          <span>Фильтр фонового шума</span>
           <label class="toggle">
-            <input type="checkbox" id="echo-toggle" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span>Автодогонка громкости</span>
-          <label class="toggle">
-            <input type="checkbox" id="agc-toggle" checked>
+            <input type="checkbox" id="bg-filter-toggle" checked>
             <span class="toggle-slider"></span>
           </label>
         </div>

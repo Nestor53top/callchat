@@ -10,8 +10,13 @@
   var myUser = null;
   var micMuted = false;
   var spkMuted = false;
+  var allMuted = false;
+  var micWasOnBeforeMuteAll = true;
   var localStream = null;
+  var micGainNode = null;
+  var audioCtx = null;
   var peers = {};
+  var audioNodes = {};
   var audioEls = {};
   var muteExceptIds = [];
   var talkStart = null;
@@ -27,6 +32,11 @@
     ]
   };
 
+  function ensureAudioCtx() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
   function notify(msg, type) {
     var el = document.getElementById('notification');
     el.textContent = msg;
@@ -36,6 +46,77 @@
     el._t = setTimeout(function() { el.style.display = 'none'; }, 3000);
   }
 
+  // --- Noise filter for incoming audio ---
+  function createNoiseFilter(ctx, source) {
+    var hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 200;
+    hp.Q.value = 0.7;
+
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1200;
+    bp.Q.value = 1.0;
+
+    var comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -30;
+    comp.knee.value = 12;
+    comp.ratio.value = 8;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.1;
+
+    source.connect(hp);
+    hp.connect(bp);
+    bp.connect(comp);
+
+    return { input: hp, output: comp, hp: hp, bp: bp, comp: comp };
+  }
+
+  // --- Mic gain ---
+  function applyMicGain(stream) {
+    ensureAudioCtx();
+    micGainNode = audioCtx.createGain();
+    var gainVal = parseInt(localStorage.getItem('vh_mic_gain') || '100');
+    micGainNode.gain.value = gainVal / 100;
+
+    var source = audioCtx.createMediaStreamSource(stream);
+    source.connect(micGainNode);
+
+    var dest = audioCtx.createMediaStreamDestination();
+    micGainNode.connect(dest);
+
+    var bgFilterOn = localStorage.getItem('vh_bg_filter') !== 'false';
+    if (bgFilterOn) {
+      var hp = audioCtx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 200;
+      hp.Q.value = 0.7;
+      var bp = audioCtx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 1200;
+      bp.Q.value = 1.0;
+      micGainNode.disconnect();
+      micGainNode.connect(hp);
+      hp.connect(bp);
+      bp.connect(dest);
+    }
+
+    var origTracks = stream.getTracks().filter(function(t) { return t.kind === 'audio'; });
+    origTracks.forEach(function(t) { t.enabled = false; });
+
+    return dest.stream;
+  }
+
+  function getMicGainValue() {
+    return parseInt(localStorage.getItem('vh_mic_gain') || '100');
+  }
+
+  function setMicGain(val) {
+    localStorage.setItem('vh_mic_gain', val.toString());
+    if (micGainNode) micGainNode.gain.value = val / 100;
+  }
+
+  // --- User list ---
   function addUserToList(u, isSelf) {
     if (document.getElementById('u-' + u.id)) return;
     var div = document.createElement('div');
@@ -71,18 +152,48 @@
     if (el) el.querySelector('.mic-status').textContent = icon;
   }
 
+  // --- Remote audio with per-user processing ---
   function addRemoteAudio(uid, stream) {
     if (audioEls[uid]) return;
+
+    ensureAudioCtx();
+
+    var source = audioCtx.createMediaStreamSource(stream);
+    var gainNode = audioCtx.createGain();
+    var savedVol = parseInt(localStorage.getItem('vh_vol_' + uid) || '100');
+    gainNode.gain.value = savedVol / 100;
+
+    var noiseFilterOn = localStorage.getItem('vh_noise_user_' + uid) === 'true';
+    var noiseFilter = null;
+    var lastNode = source;
+
+    if (noiseFilterOn) {
+      noiseFilter = createNoiseFilter(audioCtx, source);
+      lastNode = noiseFilter.output;
+    } else {
+      source.connect(gainNode);
+      lastNode = gainNode;
+    }
+
+    if (noiseFilter) {
+      noiseFilter.output.connect(gainNode);
+    }
+
+    var dest = audioCtx.createMediaStreamDestination();
+    gainNode.connect(dest);
+
     var audio = document.createElement('audio');
     audio.autoplay = true;
-    audio.srcObject = stream;
+    audio.srcObject = dest.stream;
     audio.dataset.peerId = uid;
-    if (spkMuted) audio.muted = true;
+    if (spkMuted || allMuted) audio.muted = true;
     if (muteExceptIds.length > 0) audio.muted = muteExceptIds.indexOf(uid) === -1;
     document.getElementById('audio-container').appendChild(audio);
     audioEls[uid] = audio;
+    audioNodes[uid] = { source: source, gainNode: gainNode, noiseFilter: noiseFilter, dest: dest };
+
     setMicIcon(uid, '🟢');
-    // apply saved speaker
+
     var savedSpk = localStorage.getItem('vh_spk');
     if (savedSpk && savedSpk !== 'default' && typeof audio.setSinkId === 'function') {
       audio.setSinkId(savedSpk).catch(function() {});
@@ -91,7 +202,35 @@
 
   function removeRemoteAudio(uid) {
     if (audioEls[uid]) { audioEls[uid].remove(); delete audioEls[uid]; }
+    if (audioNodes[uid]) {
+      try { audioNodes[uid].source.disconnect(); } catch(e) {}
+      try { audioNodes[uid].gainNode.disconnect(); } catch(e) {}
+      delete audioNodes[uid];
+    }
     setMicIcon(uid, '🔴');
+  }
+
+  function getUserGainNode(uid) {
+    return audioNodes[uid] ? audioNodes[uid].gainNode : null;
+  }
+
+  function toggleUserNoiseFilter(uid, on) {
+    if (!audioNodes[uid] || !audioCtx) return;
+    var nodes = audioNodes[uid];
+
+    if (on && !nodes.noiseFilter) {
+      var nf = createNoiseFilter(audioCtx, nodes.source);
+      nodes.source.disconnect();
+      nodes.source.connect(nf.input);
+      nf.output.connect(nodes.gainNode);
+      nodes.noiseFilter = nf;
+    } else if (!on && nodes.noiseFilter) {
+      nodes.source.disconnect();
+      nodes.noiseFilter.input.disconnect();
+      nodes.noiseFilter.output.disconnect();
+      nodes.source.connect(nodes.gainNode);
+      nodes.noiseFilter = null;
+    }
   }
 
   // --- WebRTC ---
@@ -165,7 +304,6 @@
       config: { presence: { key: userId } }
     });
 
-    // presence sync
     channel.on('presence', { event: 'sync' }, function() {
       var state = channel.presenceState();
       var nowKnown = {};
@@ -176,15 +314,14 @@
           nowKnown[p.uid] = p;
           if (!knownUsers[p.uid] && p.uid !== userId) {
             addUserToList({ id: p.uid, nickname: p.nickname, color: p.color }, false);
-            (function(uid, nick) {
+            (function(uid) {
               setTimeout(function() { createPeer(uid, true); }, 500);
-            })(p.uid, p.nickname);
+            })(p.uid);
             notify(p.nickname + ' присоединился', 'info');
             startTalk();
           }
         }
       }
-      // remove left
       for (var k in knownUsers) {
         if (k !== userId && !nowKnown[k]) {
           destroyPeer(k);
@@ -223,7 +360,6 @@
       }
     });
 
-    // signaling
     channel.on('broadcast', { event: 'signal' }, function(payload) {
       var msg = payload.payload;
       if (msg.to === userId && msg.from !== userId) {
@@ -274,11 +410,48 @@
     spkMuted = !spkMuted;
     var keys = Object.keys(audioEls);
     for (var i = 0; i < keys.length; i++) {
-      if (muteExceptIds.length > 0) audioEls[keys[i]].muted = muteExceptIds.indexOf(keys[i]) === -1;
-      else audioEls[keys[i]].muted = spkMuted;
+      if (allMuted) {
+        audioEls[keys[i]].muted = true;
+      } else if (muteExceptIds.length > 0) {
+        audioEls[keys[i]].muted = muteExceptIds.indexOf(keys[i]) === -1;
+      } else {
+        audioEls[keys[i]].muted = spkMuted;
+      }
     }
     this.textContent = spkMuted ? '🔊 Включить звук' : '🔊 Выкл. звук';
     this.classList.toggle('active', spkMuted);
+  });
+
+  // --- mute all ---
+  document.getElementById('mute-all-btn').addEventListener('click', function() {
+    allMuted = !allMuted;
+    var keys = Object.keys(audioEls);
+    if (allMuted) {
+      for (var i = 0; i < keys.length; i++) audioEls[keys[i]].muted = true;
+      micWasOnBeforeMuteAll = !micMuted;
+      if (micWasOnBeforeMuteAll) {
+        micMuted = true;
+        localStream.getAudioTracks().forEach(function(t) { t.enabled = false; });
+        setMicIcon(userId, '🔇');
+        document.getElementById('mute-mic-btn').textContent = '🎤 Включить микрофон';
+        document.getElementById('mute-mic-btn').classList.add('active');
+      }
+    } else {
+      for (var j = 0; j < keys.length; j++) {
+        if (muteExceptIds.length > 0) audioEls[keys[j]].muted = muteExceptIds.indexOf(keys[j]) === -1;
+        else audioEls[keys[j]].muted = spkMuted;
+      }
+      if (micWasOnBeforeMuteAll) {
+        micMuted = false;
+        localStream.getAudioTracks().forEach(function(t) { t.enabled = true; });
+        setMicIcon(userId, '🎤');
+        document.getElementById('mute-mic-btn').textContent = '🎤 Выкл. микрофон';
+        document.getElementById('mute-mic-btn').classList.remove('active');
+      }
+    }
+    this.textContent = allMuted ? '🔇 Включить всех' : '🔇 Замутить всех';
+    this.classList.toggle('active', allMuted);
+    notify(allMuted ? 'Все замучены + ваш микрофон выключен' : 'Все включены', 'info');
   });
 
   // --- mute except ---
@@ -315,7 +488,12 @@
   });
 
   // --- stats ---
+  var currentStatsUserId = null;
+  var currentStatsIsSelf = false;
+
   function showStats() {
+    currentStatsUserId = userId;
+    currentStatsIsSelf = true;
     var s = db.getStats(userId);
     document.getElementById('st-nick').textContent = myUser.nickname;
     document.getElementById('st-id').textContent = userId;
@@ -323,26 +501,64 @@
     document.getElementById('st-sessions').textContent = s.sessions || 1;
     document.getElementById('st-time').textContent = db.fmtTime(db.getTimeOnSite(userId));
     document.getElementById('st-talk').textContent = db.fmtTime(talkTime);
+    document.getElementById('user-audio-controls').classList.add('hidden');
     document.getElementById('stats-modal').classList.remove('hidden');
   }
 
   function showUserStats(u) {
+    currentStatsUserId = u.id;
+    currentStatsIsSelf = (u.id === userId);
     document.getElementById('st-nick').textContent = u.nickname;
     document.getElementById('st-id').textContent = u.id;
     document.getElementById('st-created').textContent = '—';
     document.getElementById('st-sessions').textContent = '—';
     document.getElementById('st-time').textContent = '—';
     document.getElementById('st-talk').textContent = '—';
+
+    var ctrl = document.getElementById('user-audio-controls');
+    if (!currentStatsIsSelf) {
+      ctrl.classList.remove('hidden');
+      var savedVol = parseInt(localStorage.getItem('vh_vol_' + u.id) || '100');
+      document.getElementById('user-vol-slider').value = savedVol;
+      document.getElementById('user-vol-value').textContent = savedVol + '%';
+      var noiseOn = localStorage.getItem('vh_noise_user_' + u.id) === 'true';
+      document.getElementById('user-noise-toggle').checked = noiseOn;
+    } else {
+      ctrl.classList.add('hidden');
+    }
     document.getElementById('stats-modal').classList.remove('hidden');
   }
 
   document.getElementById('my-id').addEventListener('click', showStats);
   document.getElementById('stats-btn').addEventListener('click', showStats);
 
+  // --- per-user volume slider ---
+  document.getElementById('user-vol-slider').addEventListener('input', function() {
+    var val = parseInt(this.value);
+    document.getElementById('user-vol-value').textContent = val + '%';
+    if (currentStatsUserId && !currentStatsIsSelf) {
+      localStorage.setItem('vh_vol_' + currentStatsUserId, val.toString());
+      var gn = getUserGainNode(currentStatsUserId);
+      if (gn) gn.gain.value = val / 100;
+    }
+  });
+
+  // --- per-user noise filter toggle ---
+  document.getElementById('user-noise-toggle').addEventListener('change', function() {
+    if (currentStatsUserId && !currentStatsIsSelf) {
+      var on = this.checked;
+      localStorage.setItem('vh_noise_user_' + currentStatsUserId, on.toString());
+      toggleUserNoiseFilter(currentStatsUserId, on);
+      notify(on ? 'Шумоподавление включено для пользователя' : 'Шумоподавление выключено', 'info');
+    }
+  });
+
   setInterval(function() {
     if (!document.getElementById('stats-modal').classList.contains('hidden')) {
-      document.getElementById('st-time').textContent = db.fmtTime(db.getTimeOnSite(userId));
-      document.getElementById('st-talk').textContent = db.fmtTime(talkTime);
+      if (currentStatsIsSelf) {
+        document.getElementById('st-time').textContent = db.fmtTime(db.getTimeOnSite(userId));
+        document.getElementById('st-talk').textContent = db.fmtTime(talkTime);
+      }
     }
   }, 1000);
 
@@ -363,6 +579,7 @@
     for (var i = 0; i < keys.length; i++) peers[keys[i]].close();
     if (localStream) localStream.getTracks().forEach(function(t) { t.stop(); });
     if (channel) { channel.untrack(); supa.removeChannel(channel); }
+    if (audioCtx) audioCtx.close();
     db.logout();
     window.location.href = 'index.html';
   });
@@ -384,19 +601,15 @@
     addUserToList(u, true);
 
     var stats = db.getStats(userId);
-    if (!stats.loginTime) db.saveStats(userId, { loginTime: Date.now(), sessions: (stats.sessions || 0) + 1 });
-    else db.saveStats(userId, { loginTime: Date.now(), sessions: (stats.sessions || 0) + 1 });
+    db.saveStats(userId, { loginTime: Date.now(), sessions: (stats.sessions || 0) + 1 });
 
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       var savedMic = localStorage.getItem('vh_mic');
-      var noiseOn = localStorage.getItem('vh_noise') !== 'false';
-      var echoOn = localStorage.getItem('vh_echo') !== 'false';
-      var agcOn = localStorage.getItem('vh_agc') !== 'false';
-      var audioConstraints = { echoCancellation: echoOn, noiseSuppression: noiseOn, autoGainControl: agcOn };
+      var audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
       if (savedMic && savedMic !== 'default') audioConstraints.deviceId = { exact: savedMic };
       navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
         .then(function(stream) {
-          localStream = stream;
+          localStream = applyMicGain(stream);
           joinRoom();
         })
         .catch(function(err) {
