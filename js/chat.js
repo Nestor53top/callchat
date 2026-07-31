@@ -1,13 +1,13 @@
 (function() {
-  var user = db.getCurrentUser();
-  if (!user) { window.location.href = 'index.html'; return; }
+  var userId = db.getSession();
+  if (!userId) { window.location.href = 'index.html'; return; }
 
-  var API = window.location.protocol + '//' + window.location.hostname + ':8081';
+  if (!db.init()) {
+    document.body.innerHTML = '<div style="padding:40px;color:#fff;text-align:center"><h1>Supabase не подключен</h1></div>';
+    return;
+  }
 
-  document.getElementById('app').classList.remove('hidden');
-  document.getElementById('my-nickname').textContent = user.nickname;
-  document.getElementById('my-id').textContent = user.id;
-
+  var myUser = null;
   var micMuted = false;
   var spkMuted = false;
   var localStream = null;
@@ -17,6 +17,8 @@
   var talkStart = null;
   var talkTime = 0;
   var talkInterval = null;
+  var channel = null;
+  var knownUsers = {};
 
   var iceConfig = {
     iceServers: [
@@ -24,20 +26,6 @@
       { urls: 'stun:stun1.l.google.com:19302' }
     ]
   };
-
-  // --- helpers ---
-  function api(path, cb) {
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', API + path, true);
-    xhr.onreadystatechange = function() {
-      if (xhr.readyState === 4) {
-        try { cb(null, JSON.parse(xhr.responseText)); }
-        catch(e) { cb(e, null); }
-      }
-    };
-    xhr.onerror = function() { cb(new Error('network'), null); };
-    xhr.send();
-  }
 
   function notify(msg, type) {
     var el = document.getElementById('notification');
@@ -48,7 +36,6 @@
     el._t = setTimeout(function() { el.style.display = 'none'; }, 3000);
   }
 
-  // --- user list ---
   function addUserToList(u, isSelf) {
     if (document.getElementById('u-' + u.id)) return;
     var div = document.createElement('div');
@@ -84,10 +71,6 @@
     if (el) el.querySelector('.mic-status').textContent = icon;
   }
 
-  // add self
-  addUserToList(user, true);
-
-  // --- audio ---
   function addRemoteAudio(uid, stream) {
     if (audioEls[uid]) return;
     var audio = document.createElement('audio');
@@ -115,7 +98,7 @@
     if (localStream) localStream.getTracks().forEach(function(t) { pc.addTrack(t, localStream); });
 
     pc.onicecandidate = function(e) {
-      if (e.candidate) sendSignal(remoteId, JSON.stringify({ type: 'ice', candidate: e.candidate }));
+      if (e.candidate) sendSignal(remoteId, { type: 'ice', candidate: e.candidate });
     };
     pc.ontrack = function(e) {
       if (e.streams && e.streams[0]) addRemoteAudio(remoteId, e.streams[0]);
@@ -128,7 +111,7 @@
       pc.createOffer().then(function(offer) {
         return pc.setLocalDescription(offer);
       }).then(function() {
-        sendSignal(remoteId, JSON.stringify({ type: 'offer', sdp: pc.localDescription }));
+        sendSignal(remoteId, { type: 'offer', sdp: pc.localDescription });
       }).catch(function(e) { console.error('offer err', e); });
     }
   }
@@ -138,10 +121,7 @@
     removeRemoteAudio(uid);
   }
 
-  function handleSignal(from, dataStr) {
-    var data;
-    try { data = JSON.parse(dataStr); } catch(e) { return; }
-
+  function handleSignal(from, data) {
     if (data.type === 'offer') {
       createPeer(from, false);
       var pc = peers[from];
@@ -151,7 +131,7 @@
       }).then(function(answer) {
         return pc.setLocalDescription(answer);
       }).then(function() {
-        sendSignal(from, JSON.stringify({ type: 'answer', sdp: pc.localDescription }));
+        sendSignal(from, { type: 'answer', sdp: pc.localDescription });
       }).catch(function(e) { console.error('answer err', e); });
     } else if (data.type === 'answer' && peers[from]) {
       peers[from].setRemoteDescription(new RTCSessionDescription(data.sdp)).catch(function(e) { console.error(e); });
@@ -160,60 +140,93 @@
     }
   }
 
-  // --- signaling via server ---
-  function sendSignal(to, dataStr) {
-    api('/api/signal/send?from=' + user.id + '&to=' + to + '&data=' + encodeURIComponent(dataStr), function() {});
-  }
-
-  function pollSignals() {
-    api('/api/signal/poll?uid=' + user.id, function(err, res) {
-      if (err || !res || !res.ok) return;
-      for (var i = 0; i < res.signals.length; i++) {
-        handleSignal(res.signals[i].from, res.signals[i].data);
-      }
+  // --- Supabase signaling ---
+  function sendSignal(toUserId, data) {
+    if (!channel) return;
+    channel.send({
+      type: 'broadcast',
+      event: 'signal',
+      payload: { from: userId, to: toUserId, data: data }
     });
   }
 
-  // --- presence via server ---
-  var knownUsers = {};
-
-  function announcePresence() {
-    api('/api/presence/announce?uid=' + user.id + '&nickname=' + encodeURIComponent(user.nickname) + '&color=' + encodeURIComponent(user.color), function(err, res) {
-      if (err || !res || !res.ok) return;
-      syncUsers(res.users);
+  function joinRoom() {
+    channel = supa.channel('voice-lobby', {
+      config: { presence: { key: userId } }
     });
-  }
 
-  function pollPresence() {
-    api('/api/presence/list', function(err, res) {
-      if (err || !res || !res.ok) return;
-      syncUsers(res.users);
+    // presence sync
+    channel.on('presence', { event: 'sync' }, function() {
+      var state = channel.presenceState();
+      var nowKnown = {};
+      for (var key in state) {
+        var presences = state[key];
+        for (var i = 0; i < presences.length; i++) {
+          var p = presences[i];
+          nowKnown[p.uid] = p;
+          if (!knownUsers[p.uid] && p.uid !== userId) {
+            addUserToList({ id: p.uid, nickname: p.nickname, color: p.color }, false);
+            createPeer(p.uid, true);
+            notify(p.nickname + ' присоединился', 'info');
+            startTalk();
+          }
+        }
+      }
+      // remove left
+      for (var k in knownUsers) {
+        if (k !== userId && !nowKnown[k]) {
+          destroyPeer(k);
+          removeUserFromList(k);
+          notify(knownUsers[k].nickname + ' вышел', 'info');
+          stopTalkIfNeeded();
+        }
+      }
+      knownUsers = nowKnown;
     });
-  }
 
-  function syncUsers(usersList) {
-    var nowKnown = {};
-    for (var i = 0; i < usersList.length; i++) {
-      var u = usersList[i];
-      nowKnown[u.id] = u;
-      if (!knownUsers[u.id] && u.id !== user.id) {
-        addUserToList(u, false);
-        createPeer(u.id, true);
-        notify(u.nickname + ' присоединился', 'info');
-        startTalk();
+    channel.on('presence', { event: 'join' }, function(payload) {
+      for (var i = 0; i < payload.newPresences.length; i++) {
+        var p = payload.newPresences[i];
+        if (p.uid !== userId && !knownUsers[p.uid]) {
+          addUserToList({ id: p.uid, nickname: p.nickname, color: p.color }, false);
+          createPeer(p.uid, true);
+          notify(p.nickname + ' присоединился', 'info');
+          startTalk();
+        }
       }
-    }
-    // remove left
-    var keys = Object.keys(knownUsers);
-    for (var j = 0; j < keys.length; j++) {
-      if (keys[j] !== user.id && !nowKnown[keys[j]]) {
-        destroyPeer(keys[j]);
-        removeUserFromList(keys[j]);
-        notify(knownUsers[keys[j]].nickname + ' вышел', 'info');
-        stopTalkIfNeeded();
+    });
+
+    channel.on('presence', { event: 'leave' }, function(payload) {
+      for (var i = 0; i < payload.leftPresences.length; i++) {
+        var p = payload.leftPresences[i];
+        if (p.uid !== userId) {
+          destroyPeer(p.uid);
+          removeUserFromList(p.uid);
+          if (knownUsers[p.uid]) notify(knownUsers[p.uid].nickname + ' вышел', 'info');
+          delete knownUsers[p.uid];
+          stopTalkIfNeeded();
+        }
       }
-    }
-    knownUsers = nowKnown;
+    });
+
+    // signaling
+    channel.on('broadcast', { event: 'signal' }, function(payload) {
+      var msg = payload.payload;
+      if (msg.to === userId && msg.from !== userId) {
+        handleSignal(msg.from, msg.data);
+      }
+    });
+
+    channel.subscribe(function(status) {
+      if (status === 'SUBSCRIBED') {
+        channel.track({
+          uid: userId,
+          nickname: myUser.nickname,
+          color: myUser.color,
+          online_at: new Date().toISOString()
+        });
+      }
+    });
   }
 
   // --- talk time ---
@@ -239,7 +252,7 @@
     localStream.getAudioTracks().forEach(function(t) { t.enabled = !micMuted; });
     this.textContent = micMuted ? '🎤 Включить микрофон' : '🎤 Выкл. микрофон';
     this.classList.toggle('active', micMuted);
-    setMicIcon(user.id, micMuted ? '🔇' : '🎤');
+    setMicIcon(userId, micMuted ? '🔇' : '🎤');
   });
 
   // --- speakers ---
@@ -289,12 +302,12 @@
 
   // --- stats ---
   function showStats() {
-    var s = db.getStats(user.id);
-    document.getElementById('st-nick').textContent = user.nickname;
-    document.getElementById('st-id').textContent = user.id;
-    document.getElementById('st-created').textContent = new Date(user.createdAt).toLocaleDateString('ru-RU');
-    document.getElementById('st-sessions').textContent = s ? s.sessions : 0;
-    document.getElementById('st-time').textContent = db.fmtTime(db.getTimeOnSite(user.id));
+    var s = db.getStats(userId);
+    document.getElementById('st-nick').textContent = myUser.nickname;
+    document.getElementById('st-id').textContent = userId;
+    document.getElementById('st-created').textContent = '—';
+    document.getElementById('st-sessions').textContent = s.sessions || 1;
+    document.getElementById('st-time').textContent = db.fmtTime(db.getTimeOnSite(userId));
     document.getElementById('st-talk').textContent = db.fmtTime(talkTime);
     document.getElementById('stats-modal').classList.remove('hidden');
   }
@@ -302,7 +315,7 @@
   function showUserStats(u) {
     document.getElementById('st-nick').textContent = u.nickname;
     document.getElementById('st-id').textContent = u.id;
-    document.getElementById('st-created').textContent = u.createdAt ? new Date(u.createdAt).toLocaleDateString('ru-RU') : '—';
+    document.getElementById('st-created').textContent = '—';
     document.getElementById('st-sessions').textContent = '—';
     document.getElementById('st-time').textContent = '—';
     document.getElementById('st-talk').textContent = '—';
@@ -314,7 +327,7 @@
 
   setInterval(function() {
     if (!document.getElementById('stats-modal').classList.contains('hidden')) {
-      document.getElementById('st-time').textContent = db.fmtTime(db.getTimeOnSite(user.id));
+      document.getElementById('st-time').textContent = db.fmtTime(db.getTimeOnSite(userId));
       document.getElementById('st-talk').textContent = db.fmtTime(talkTime);
     }
   }, 1000);
@@ -331,81 +344,43 @@
 
   // --- logout ---
   document.getElementById('logout-btn').addEventListener('click', function() {
-    db.saveStats(user.id, { totalTime: db.getTimeOnSite(user.id), talkTime: talkTime });
+    db.saveStats(userId, { totalTime: db.getTimeOnSite(userId), talkTime: talkTime });
     var keys = Object.keys(peers);
     for (var i = 0; i < keys.length; i++) peers[keys[i]].close();
     if (localStream) localStream.getTracks().forEach(function(t) { t.stop(); });
-    api('/api/presence/leave?uid=' + user.id, function() {});
+    if (channel) { channel.untrack(); supa.removeChannel(channel); }
     db.logout();
     window.location.href = 'index.html';
   });
 
-  // --- auth mode: server or localStorage ---
-  function serverRegister(nick, pwd, cb) {
-    api('/api/register?nickname=' + encodeURIComponent(nick) + '&password=' + encodeURIComponent(pwd), function(err, res) {
-      if (err || !res) return cb('Сервер недоступен, регистрирую локально');
-      cb(null, res);
-    });
-  }
-
-  function serverLogin(nick, pwd, cb) {
-    api('/api/login?nickname=' + encodeURIComponent(nick) + '&password=' + encodeURIComponent(pwd), function(err, res) {
-      if (err || !res) return cb('Сервер недоступен');
-      cb(null, res);
-    });
-  }
-
-  // override db methods to use server first, then fallback
-  var origRegister = db.register.bind(db);
-  var origLogin = db.login.bind(db);
-
-  db.register = function(nick, pwd) {
-    var result = origRegister(nick, pwd);
-    if (result.ok) {
-      // also register on server
-      serverRegister(nick, pwd, function() {});
-    }
-    return result;
-  };
-
-  db.login = function(nick, pwd) {
-    // try server first
-    var result = origLogin(nick, pwd);
-    if (!result.ok) return result;
-    serverLogin(nick, pwd, function() {});
-    return result;
-  };
-
   // --- init ---
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    notify('Микрофон недоступен (нужен HTTPS или localhost)', 'error');
-    document.getElementById('call-status').innerHTML =
-      '<div class="status-icon">🔇</div><h2>Микрофон недоступен</h2><p>Откройте через HTTPS или localhost</p>';
-    announcePresence();
-    pollPresence();
-    pollSignals();
-    setInterval(function() { pollPresence(); pollSignals(); }, 2000);
-  } else {
-  navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
-    .then(function(stream) {
-      localStream = stream;
-      announcePresence();
-      pollPresence();
-      pollSignals();
-      setInterval(function() {
-        pollPresence();
-        pollSignals();
-      }, 2000);
-    })
-    .catch(function(err) {
-      notify('Микрофон недоступен: ' + err.message, 'error');
-      document.getElementById('call-status').innerHTML =
-        '<div class="status-icon">🔇</div><h2>Микрофон недоступен</h2><p>Разрешите доступ к микрофону и обновите страницу</p>';
-      // still work without mic - just no audio
-      announcePresence();
-      pollPresence();
-      pollSignals();
-      setInterval(function() { pollPresence(); pollSignals(); }, 2000);
-    });
-  }
+  db.getUser(userId, function(err, u) {
+    if (err || !u) { window.location.href = 'index.html'; return; }
+    myUser = u;
+    document.getElementById('app').classList.remove('hidden');
+    document.getElementById('my-nickname').textContent = u.nickname;
+    document.getElementById('my-id').textContent = userId;
+    addUserToList(u, true);
+
+    var stats = db.getStats(userId);
+    if (!stats.loginTime) db.saveStats(userId, { loginTime: Date.now(), sessions: (stats.sessions || 0) + 1 });
+    else db.saveStats(userId, { loginTime: Date.now(), sessions: (stats.sessions || 0) + 1 });
+
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+        .then(function(stream) {
+          localStream = stream;
+          joinRoom();
+        })
+        .catch(function(err) {
+          notify('Микрофон недоступен: ' + err.message, 'error');
+          document.getElementById('call-status').innerHTML =
+            '<div class="status-icon">🔇</div><h2>Микрофон недоступен</h2><p>Разрешите доступ к микрофону и обновите страницу</p>';
+          joinRoom();
+        });
+    } else {
+      notify('Микрофон недоступен (нужен HTTPS)', 'error');
+      joinRoom();
+    }
+  });
 })();

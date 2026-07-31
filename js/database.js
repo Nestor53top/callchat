@@ -1,78 +1,53 @@
+var SUPABASE_URL = 'https://zerqyfvvafzfnglzszlr.supabase.co';
+var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InplcnF5ZnZ2YWZ6Zm5nbHpzemxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0NTQzMTAsImV4cCI6MjEwMTAzMDMxMH0.KXNjeThlDdGSAUhxhfNwsdY0VwAUCBImMjmXRc8X0ik';
+
+var supa = null;
+
 var db = {
-  _users: null,
-  _stats: null,
-
-  _loadUsers: function() {
-    try { return JSON.parse(localStorage.getItem('vh_users') || '{}'); }
-    catch(e) { return {}; }
-  },
-
-  _saveUsers: function(users) {
-    localStorage.setItem('vh_users', JSON.stringify(users));
-  },
-
-  _loadStats: function() {
-    try { return JSON.parse(localStorage.getItem('vh_stats') || '{}'); }
-    catch(e) { return {}; }
-  },
-
-  _saveStats: function(stats) {
-    localStorage.setItem('vh_stats', JSON.stringify(stats));
-  },
-
   _genId: function() {
     var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     var id = '';
-    for (var i = 0; i < 8; i++) {
-      id += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    for (var i = 0; i < 8; i++) id += chars.charAt(Math.floor(Math.random() * chars.length));
     return id;
   },
 
   _genColor: function() {
-    var colors = ['#7c3aed','#3b82f6','#22c55e','#f59e0b','#ef4444','#ec4899','#8b5cf6','#06b6d4','#f97316','#14b8a6'];
-    return colors[Math.floor(Math.random() * colors.length)];
+    var c = ['#7c3aed','#3b82f6','#22c55e','#f59e0b','#ef4444','#ec4899','#8b5cf6','#06b6d4'];
+    return c[Math.floor(Math.random() * c.length)];
   },
 
-  register: function(nickname, password) {
-    var users = this._loadUsers();
-    var keys = Object.keys(users);
-    for (var i = 0; i < keys.length; i++) {
-      if (users[keys[i]].nickname.toLowerCase() === nickname.toLowerCase()) {
-        return { ok: false, error: 'Этот никнейм уже занят' };
-      }
+  init: function() {
+    if (typeof supabase !== 'undefined' && supabase.createClient) {
+      supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     }
-    var id = this._genId();
-    var user = {
-      id: id,
-      nickname: nickname,
-      password: password,
-      color: this._genColor(),
-      createdAt: Date.now(),
-      lastSeen: Date.now()
-    };
-    users[id] = user;
-    this._saveUsers(users);
-    this._initStats(id);
-    return { ok: true, user: user };
+    return !!supa;
   },
 
-  login: function(nickname, password) {
-    var users = this._loadUsers();
-    var keys = Object.keys(users);
-    for (var i = 0; i < keys.length; i++) {
-      var u = users[keys[i]];
-      if (u.nickname.toLowerCase() === nickname.toLowerCase()) {
-        if (u.password !== password) {
-          return { ok: false, error: 'Неверный пароль' };
-        }
-        u.lastSeen = Date.now();
-        users[u.id] = u;
-        this._saveUsers(users);
-        return { ok: true, user: u };
-      }
-    }
-    return { ok: false, error: 'Пользователь не найден' };
+  register: function(nickname, password, cb) {
+    if (!supa) return cb('Supabase не подключен');
+    supa.from('users').select('*').eq('nickname', nickname).then(function(r) {
+      if (r.data && r.data.length > 0) return cb('Никнейм занят');
+      var id = db._genId();
+      supa.from('users').insert({
+        user_id: id,
+        nickname: nickname,
+        password: password,
+        color: db._genColor()
+      }).then(function(r2) {
+        if (r2.error) return cb(r2.error.message);
+        cb(null, { id: id, nickname: nickname, color: db._genColor() });
+      });
+    });
+  },
+
+  login: function(nickname, password, cb) {
+    if (!supa) return cb('Supabase не подключен');
+    supa.from('users').select('*').eq('nickname', nickname).eq('password', password).then(function(r) {
+      if (r.error) return cb(r.error.message);
+      if (!r.data || r.data.length === 0) return cb('Неверный никнейм или пароль');
+      var u = r.data[0];
+      cb(null, { id: u.user_id, nickname: u.nickname, color: u.color });
+    });
   },
 
   loginSession: function(userId) {
@@ -87,56 +62,41 @@ var db = {
     localStorage.removeItem('vh_session');
   },
 
-  getCurrentUser: function() {
-    var sid = this.getSession();
-    if (!sid) return null;
-    var users = this._loadUsers();
-    return users[sid] || null;
+  getUser: function(userId, cb) {
+    if (!supa) return cb(null, null);
+    supa.from('users').select('*').eq('user_id', userId).then(function(r) {
+      if (!r.data || r.data.length === 0) return cb(null, null);
+      var u = r.data[0];
+      cb(null, { id: u.user_id, nickname: u.nickname, color: u.color });
+    });
   },
 
-  getUser: function(userId) {
-    var users = this._loadUsers();
-    return users[userId] || null;
-  },
-
-  _initStats: function(userId) {
-    var stats = this._loadStats();
-    if (!stats[userId]) {
-      stats[userId] = { totalTime: 0, talkTime: 0, sessions: 0, loginTime: Date.now() };
-    }
-    stats[userId].loginTime = Date.now();
-    stats[userId].sessions++;
-    this._saveStats(stats);
-  },
-
-  getStats: function(userId) {
-    var stats = this._loadStats();
-    return stats[userId] || null;
-  },
-
+  _stats: {},
   saveStats: function(userId, data) {
-    var stats = this._loadStats();
-    if (!stats[userId]) stats[userId] = {};
+    var s = this._stats[userId] || {};
     var keys = Object.keys(data);
-    for (var i = 0; i < keys.length; i++) {
-      stats[userId][keys[i]] = data[keys[i]];
-    }
-    this._saveStats(stats);
+    for (var i = 0; i < keys.length; i++) s[keys[i]] = data[keys[i]];
+    this._stats[userId] = s;
+    try { localStorage.setItem('vh_stats_' + userId, JSON.stringify(s)); } catch(e) {}
   },
-
+  getStats: function(userId) {
+    if (this._stats[userId]) return this._stats[userId];
+    try {
+      var s = JSON.parse(localStorage.getItem('vh_stats_' + userId) || '{}');
+      this._stats[userId] = s;
+      return s;
+    } catch(e) { return {}; }
+  },
   getTimeOnSite: function(userId) {
     var s = this.getStats(userId);
-    if (!s || !s.loginTime) return 0;
-    return s.totalTime + (Date.now() - s.loginTime);
+    if (!s.loginTime) return 0;
+    return (s.totalTime || 0) + (Date.now() - s.loginTime);
   },
-
   fmtTime: function(ms) {
     var sec = Math.floor(ms / 1000);
     var min = Math.floor(sec / 60);
     var hr = Math.floor(min / 60);
-    var m = min % 60;
-    var s = sec % 60;
-    if (hr > 0) return hr + 'ч ' + m + 'м ' + s + 'с';
-    return m + 'м ' + s + 'с';
+    if (hr > 0) return hr + 'ч ' + (min % 60) + 'м ' + (sec % 60) + 'с';
+    return min + 'м ' + (sec % 60) + 'с';
   }
 };

@@ -1,4 +1,9 @@
 (function() {
+  if (!db.init()) {
+    document.getElementById('auth-error').textContent = 'Не удалось подключиться к Supabase';
+    return;
+  }
+
   var nicknameInput = document.getElementById('nickname');
   var passwordInput = document.getElementById('password');
   var confirmInput = document.getElementById('confirm-password');
@@ -8,20 +13,6 @@
   var confirmGroup = document.getElementById('confirm-group');
 
   var isRegister = false;
-  var API = window.location.protocol + '//' + window.location.hostname + ':8081';
-
-  function api(path, cb) {
-    var xhr = new XMLHttpRequest();
-    xhr.open('GET', API + path, true);
-    xhr.onreadystatechange = function() {
-      if (xhr.readyState === 4) {
-        try { cb(null, JSON.parse(xhr.responseText)); }
-        catch(e) { cb(e, null); }
-      }
-    };
-    xhr.onerror = function() { cb(new Error('network'), null); };
-    xhr.send();
-  }
 
   authBtn.addEventListener('click', function() {
     errorEl.textContent = '';
@@ -31,42 +22,30 @@
     if (!nick || nick.length < 2) { errorEl.textContent = 'Никнейм минимум 2 символа'; return; }
     if (!pwd || pwd.length < 4) { errorEl.textContent = 'Пароль минимум 4 символа'; return; }
 
-    if (isRegister) {
-      var confirm = confirmInput.value;
-      if (pwd !== confirm) { errorEl.textContent = 'Пароли не совпадают'; return; }
+    authBtn.disabled = true;
+    authBtn.textContent = 'Загрузка...';
 
-      // try server first
-      api('/api/register?nickname=' + encodeURIComponent(nick) + '&password=' + encodeURIComponent(pwd), function(err, res) {
-        if (!err && res && res.ok) {
-          db.loginSession(res.user.id);
-          // also save locally
-          var localResult = db.register(nick, pwd);
-          window.location.href = 'chat.html';
-        } else {
-          // fallback to local
-          var localResult = db.register(nick, pwd);
-          if (localResult.ok) {
-            db.loginSession(localResult.user.id);
-            window.location.href = 'chat.html';
-          } else {
-            errorEl.textContent = (res && res.error) || localResult.error || 'Ошибка';
-          }
-        }
+    if (isRegister) {
+      if (pwd !== confirmInput.value) {
+        errorEl.textContent = 'Пароли не совпадают';
+        authBtn.disabled = false;
+        authBtn.textContent = 'Создать аккаунт';
+        return;
+      }
+      db.register(nick, pwd, function(err, user) {
+        authBtn.disabled = false;
+        authBtn.textContent = 'Создать аккаунт';
+        if (err) { errorEl.textContent = err; return; }
+        db.loginSession(user.id);
+        window.location.href = 'chat.html';
       });
     } else {
-      api('/api/login?nickname=' + encodeURIComponent(nick) + '&password=' + encodeURIComponent(pwd), function(err, res) {
-        if (!err && res && res.ok) {
-          db.loginSession(res.user.id);
-          window.location.href = 'chat.html';
-        } else {
-          var localResult = db.login(nick, pwd);
-          if (localResult.ok) {
-            db.loginSession(localResult.user.id);
-            window.location.href = 'chat.html';
-          } else {
-            errorEl.textContent = (res && res.error) || localResult.error || 'Ошибка';
-          }
-        }
+      db.login(nick, pwd, function(err, user) {
+        authBtn.disabled = false;
+        authBtn.textContent = 'Войти';
+        if (err) { errorEl.textContent = err; return; }
+        db.loginSession(user.id);
+        window.location.href = 'chat.html';
       });
     }
   });
